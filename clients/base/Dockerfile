@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy client code
 COPY clients/base/client.py .
+COPY shared ./shared
 
 # Create data directory
 RUN mkdir -p data logs

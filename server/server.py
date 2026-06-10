@@ -5,7 +5,6 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from model import FederatedModel
-from config import Config
 
 # Setup logging
 logging.basicConfig(
@@ -18,7 +17,6 @@ app = Flask(__name__)
 CORS(app)
 
 # Initialize model
-config = Config()
 federated_model = FederatedModel(n_features=7)
 
 # Training state
