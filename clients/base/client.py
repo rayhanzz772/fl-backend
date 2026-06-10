@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import os
 import sys
 import logging
@@ -22,6 +21,7 @@ class FederatedLearningClient:
     def __init__(self, client_name: str, data_path: str):
         self.client_name = client_name
         self.data_path = data_path
+        self.n_features = 7  # FIXED: 7 features, matching server
         self.model = LogisticRegression(
             max_iter=1000,
             random_state=config.RANDOM_STATE,
@@ -31,7 +31,7 @@ class FederatedLearningClient:
         self.X = None
         self.y = None
         self.num_samples = 0
-        self.is_trained = False  # Track if model has been trained
+        self.is_trained = False
         
         self.load_and_preprocess()
     
@@ -41,11 +41,12 @@ class FederatedLearningClient:
         
         if not os.path.exists(self.data_path):
             logger.error(f"Data file not found: {self.data_path}")
-            # Generate dummy data for testing
-            self.X = np.random.rand(50, 10)
+            # Generate dummy data with EXACTLY 7 features
+            np.random.seed(42)
+            self.X = np.random.rand(50, self.n_features)  # 7 features, not 10
             self.y = np.random.randint(0, 2, 50)
             self.num_samples = 50
-            logger.warning(f"Using dummy data: {self.num_samples} samples")
+            logger.warning(f"Using dummy data: {self.num_samples} samples, {self.n_features} features")
             return
         
         df = pd.read_csv(self.data_path)
@@ -55,16 +56,38 @@ class FederatedLearningClient:
         self.X, self.y = self.processor.process(df, fit=True)
         self.num_samples = len(self.X)
         
+        # Ensure X has exactly 7 features
+        if self.X.shape[1] != self.n_features:
+            logger.warning(f"Processor returned {self.X.shape[1]} features, adjusting to {self.n_features}")
+            if self.X.shape[1] > self.n_features:
+                self.X = self.X[:, :self.n_features]  # Take first 7
+            else:
+                # Pad with zeros
+                padded = np.zeros((self.num_samples, self.n_features))
+                padded[:, :self.X.shape[1]] = self.X
+                self.X = padded
+        
         logger.info(f"Preprocessed data shape: {self.X.shape}")
         logger.info(f"Stunting rate: {self.y.mean()*100:.1f}%")
     
     def get_parameters(self):
-        """Get current model parameters"""
-        # If model not trained yet, return dummy parameters
+        """Get current model parameters with EXACTLY 7 features"""
         if not self.is_trained:
             # Fit once to initialize parameters
             self.model.fit(self.X[:min(10, len(self.X))], self.y[:min(10, len(self.y))])
             self.is_trained = True
+        
+        # Ensure coef has correct shape (1,7)
+        coef = self.model.coef_
+        if coef.shape[1] != self.n_features:
+            logger.warning(f"Coef shape {coef.shape}, reshaping to (1,{self.n_features})")
+            if coef.shape[1] > self.n_features:
+                coef = coef[:, :self.n_features]
+            else:
+                padded = np.zeros((1, self.n_features))
+                padded[:, :coef.shape[1]] = coef
+                coef = padded
+            self.model.coef_ = coef
         
         return {
             'coef_': self.model.coef_.tolist(),
@@ -74,10 +97,23 @@ class FederatedLearningClient:
     def set_parameters(self, params):
         """Set model parameters from server"""
         try:
-            self.model.coef_ = np.array(params['coef_'])
-            self.model.intercept_ = np.array(params['intercept_'])
+            coef = np.array(params['coef_'])
+            intercept = np.array(params['intercept_'])
+            
+            # Ensure correct shape (1,7)
+            if coef.shape[1] != self.n_features:
+                logger.warning(f"Received {coef.shape[1]} features, adjusting to {self.n_features}")
+                if coef.shape[1] > self.n_features:
+                    coef = coef[:, :self.n_features]
+                else:
+                    padded = np.zeros((1, self.n_features))
+                    padded[:, :coef.shape[1]] = coef
+                    coef = padded
+            
+            self.model.coef_ = coef
+            self.model.intercept_ = intercept
             self.is_trained = True
-            logger.info(f"Parameters set for {self.client_name}")
+            logger.info(f"Parameters set for {self.client_name}, coef shape: {self.model.coef_.shape}")
         except Exception as e:
             logger.error(f"Error setting parameters: {e}")
     
@@ -95,6 +131,16 @@ class FederatedLearningClient:
             acc = self.model.score(self.X, self.y)
             history.append(acc)
             logger.debug(f"Epoch {epoch+1}/{epochs}: accuracy={acc:.3f}")
+        
+        # Ensure coef has correct shape after training
+        if self.model.coef_.shape[1] != self.n_features:
+            logger.warning(f"After training, coef shape is {self.model.coef_.shape}, fixing...")
+            if self.model.coef_.shape[1] > self.n_features:
+                self.model.coef_ = self.model.coef_[:, :self.n_features]
+            else:
+                padded = np.zeros((1, self.n_features))
+                padded[:, :self.model.coef_.shape[1]] = self.model.coef_
+                self.model.coef_ = padded
         
         return self.get_parameters(), history
     
@@ -120,6 +166,7 @@ def health():
         'status': 'healthy',
         'client': client.client_name,
         'samples': client.num_samples,
+        'n_features': client.n_features,
         'model_ready': client.model is not None,
         'is_trained': client.is_trained
     })
@@ -129,6 +176,7 @@ def client_info():
     return jsonify({
         'name': client.client_name,
         'num_samples': client.num_samples,
+        'n_features': client.n_features,
         'stunting_rate': float(client.y.mean()) if client.y is not None else 0,
         'features': client.processor.get_feature_names() if hasattr(client.processor, 'get_feature_names') else []
     })
@@ -197,5 +245,5 @@ def reset_model():
 
 if __name__ == '__main__':
     port = int(os.getenv('CLIENT_PORT', 5001))
-    logger.info(f"Starting client {CLIENT_NAME} on port {port}")
+    logger.info(f"Starting client {CLIENT_NAME} on port {port} with {client.n_features} features")
     app.run(host='0.0.0.0', port=port, debug=False)
