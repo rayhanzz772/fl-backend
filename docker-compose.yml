@@ -1,66 +1,60 @@
-version: '3.8'
-
 services:
-  # Client 1: Waru
+  fl-server:
+    build:
+      context: .                    # Root project sebagai context
+      dockerfile: server/Dockerfile
+    container_name: fl-server
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
   client-waru:
     build:
-      context: ./clients/base
-      dockerfile: Dockerfile
+      context: .                    # Root project sebagai context
+      dockerfile: clients/base/Dockerfile
     container_name: client-waru
     ports:
       - "5001:5001"
     volumes:
       - ./clients/waru/data:/app/data
-      - ./clients/waru:/app/config  # Optional
-      - ./shared:/app/shared
     environment:
-      - CLIENT_NAME=waru           # ← Set dari sini, bukan dari Dockerfile
+      - CLIENT_NAME=waru
       - CLIENT_PORT=5001
-      - SERVER_URL=http://fl-server:5000
-    networks:
-      - fl-network
+      - LOCAL_EPOCHS=3
     depends_on:
       - fl-server
     restart: unless-stopped
 
-  # Client 2: Kemiri
   client-kemiri:
     build:
-      context: ./clients/base
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: clients/base/Dockerfile
     container_name: client-kemiri
     ports:
       - "5002:5001"
     volumes:
       - ./clients/kemiri/data:/app/data
-      - ./shared:/app/shared
     environment:
-      - CLIENT_NAME=kemiri         # ← Set dari sini
+      - CLIENT_NAME=kemiri
       - CLIENT_PORT=5001
-      - SERVER_URL=http://fl-server:5000
-    networks:
-      - fl-network
+      - LOCAL_EPOCHS=3
     depends_on:
       - fl-server
     restart: unless-stopped
 
-  # Client 3: Nangsri
   client-nangsri:
     build:
-      context: ./clients/base
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: clients/base/Dockerfile
     container_name: client-nangsri
     ports:
       - "5003:5001"
     volumes:
       - ./clients/nangsri/data:/app/data
-      - ./shared:/app/shared
     environment:
-      - CLIENT_NAME=nangsri        # ← Set dari sini
+      - CLIENT_NAME=nangsri
       - CLIENT_PORT=5001
-      - SERVER_URL=http://fl-server:5000
-    networks:
-      - fl-network
+      - LOCAL_EPOCHS=3
     depends_on:
       - fl-server
     restart: unless-stopped
