@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # Client 1: Waru
+  client-waru:
+    build:
+      context: ./clients/base
+      dockerfile: Dockerfile
+    container_name: client-waru
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./clients/waru/data:/app/data
+      - ./clients/waru:/app/config  # Optional
+      - ./shared:/app/shared
+    environment:
+      - CLIENT_NAME=waru           # ← Set dari sini, bukan dari Dockerfile
+      - CLIENT_PORT=5001
+      - SERVER_URL=http://fl-server:5000
+    networks:
+      - fl-network
+    depends_on:
+      - fl-server
+    restart: unless-stopped
+
+  # Client 2: Kemiri
+  client-kemiri:
+    build:
+      context: ./clients/base
+      dockerfile: Dockerfile
+    container_name: client-kemiri
+    ports:
+      - "5002:5001"
+    volumes:
+      - ./clients/kemiri/data:/app/data
+      - ./shared:/app/shared
+    environment:
+      - CLIENT_NAME=kemiri         # ← Set dari sini
+      - CLIENT_PORT=5001
+      - SERVER_URL=http://fl-server:5000
+    networks:
+      - fl-network
+    depends_on:
+      - fl-server
+    restart: unless-stopped
+
+  # Client 3: Nangsri
+  client-nangsri:
+    build:
+      context: ./clients/base
+      dockerfile: Dockerfile
+    container_name: client-nangsri
+    ports:
+      - "5003:5001"
+    volumes:
+      - ./clients/nangsri/data:/app/data
+      - ./shared:/app/shared
+    environment:
+      - CLIENT_NAME=nangsri        # ← Set dari sini
+      - CLIENT_PORT=5001
+      - SERVER_URL=http://fl-server:5000
+    networks:
+      - fl-network
+    depends_on:
+      - fl-server
+    restart: unless-stopped
