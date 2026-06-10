@@ -1,6 +1,7 @@
 FROM python:3.9-slim
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Copy requirements dari root
 COPY requirements.txt .
