@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import f1_score, recall_score, precision_score
+from sklearn.metrics import f1_score, recall_score, precision_score, confusion_matrix
 
 sys.path.append('/app')
 from shared.data_processor import StuntingDataProcessor
@@ -20,28 +20,24 @@ class FederatedLearningClient:
     def __init__(self, client_name: str, data_path: str):
         self.client_name = client_name
         self.data_path = data_path
-        # ADD CLASS WEIGHT TO HANDLE IMBALANCE!
         self.model = LogisticRegression(
             max_iter=1000,
             random_state=config.RANDOM_STATE,
-            class_weight='balanced',  # ← Kunci untuk imbalance data!
-            solver='liblinear'  # Better for small data
+            class_weight='balanced',
+            solver='liblinear'
         )
         self.processor = StuntingDataProcessor()
         self.X = None
         self.y = None
         self.num_samples = 0
         self.is_trained = False
-        
         self.load_and_preprocess()
     
     def find_data_file(self):
-        """Cari file data"""
         data_dir = '/app/data'
         possible_names = [
             f'{data_dir}/stunting_{self.client_name}.csv',
             f'{data_dir}/{self.client_name}.csv',
-            f'{data_dir}/{self.client_name}.CSV',
         ]
         for path in possible_names:
             if os.path.exists(path):
@@ -49,11 +45,7 @@ class FederatedLearningClient:
         return None
     
     def load_and_preprocess(self):
-        """Load data dari CSV"""
-        logger.info(f"="*50)
         logger.info(f"LOADING DATA FOR {self.client_name.upper()}")
-        logger.info(f"="*50)
-        
         data_file = self.find_data_file()
         
         if data_file is None:
@@ -63,25 +55,15 @@ class FederatedLearningClient:
             self.num_samples = 50
             return
         
-        # Load CSV
         df = pd.read_csv(data_file, sep=";", encoding="latin1")
         logger.info(f"Raw data: {df.shape}")
         
-        # Process
         self.X, self.y = self.processor.process(df, fit=True)
         self.num_samples = len(self.X)
         
-        # Log class distribution
         n_stunting = (self.y == 1).sum()
         n_normal = (self.y == 0).sum()
-        logger.info(f"✅ Data loaded:")
-        logger.info(f"   Total: {self.num_samples} samples")
-        logger.info(f"   Normal (0): {n_normal} ({n_normal/self.num_samples*100:.1f}%)")
-        logger.info(f"   Stunting (1): {n_stunting} ({n_stunting/self.num_samples*100:.1f}%)")
-        
-        if n_stunting < n_normal * 0.3:
-            logger.warning(f"⚠️  IMBALANCE DETECTED! Stunting only {n_stunting/self.num_samples*100:.1f}%")
-            logger.warning(f"   Using class_weight='balanced' to handle imbalance")
+        logger.info(f"✅ {self.num_samples} samples (Normal: {n_normal}, Stunting: {n_stunting})")
     
     def get_parameters(self):
         if not self.is_trained:
@@ -101,7 +83,6 @@ class FederatedLearningClient:
             logger.error(f"Error: {e}")
     
     def train_local(self, epochs=5):
-        """Local training with metrics"""
         history = {'accuracy': [], 'f1': [], 'recall': []}
         
         if not self.is_trained:
@@ -110,26 +91,16 @@ class FederatedLearningClient:
         
         for epoch in range(epochs):
             self.model.fit(self.X, self.y)
-            
-            # Calculate multiple metrics
             y_pred = self.model.predict(self.X)
-            acc = (y_pred == self.y).mean()
-            f1 = f1_score(self.y, y_pred, zero_division=0)
-            recall = recall_score(self.y, y_pred, zero_division=0)
             
-            history['accuracy'].append(acc)
-            history['f1'].append(f1)
-            history['recall'].append(recall)
-            
-            logger.debug(f"Epoch {epoch+1}: acc={acc:.3f}, f1={f1:.3f}, recall={recall:.3f}")
+            history['accuracy'].append((y_pred == self.y).mean())
+            history['f1'].append(f1_score(self.y, y_pred, zero_division=0))
+            history['recall'].append(recall_score(self.y, y_pred, zero_division=0))
         
-        # Log final metrics
         logger.info(f"Training done - Acc: {history['accuracy'][-1]:.3f}, F1: {history['f1'][-1]:.3f}")
-        
         return self.get_parameters(), history
     
     def evaluate(self):
-        """Evaluate with multiple metrics"""
         if not self.is_trained:
             return {'accuracy': 0.0, 'f1': 0.0, 'recall': 0.0}
         
@@ -138,8 +109,8 @@ class FederatedLearningClient:
             'accuracy': (y_pred == self.y).mean(),
             'f1': f1_score(self.y, y_pred, zero_division=0),
             'recall': recall_score(self.y, y_pred, zero_division=0),
-            'samples': self.num_samples,
-            'stunting_rate': self.y.mean()
+            'precision': precision_score(self.y, y_pred, zero_division=0),
+            'samples': self.num_samples
         }
 
 # Initialize
@@ -151,12 +122,7 @@ client = FederatedLearningClient(CLIENT_NAME, DATA_PATH)
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({
-        'status': 'healthy',
-        'client': client.client_name,
-        'samples': client.num_samples,
-        'class_weight': 'balanced'
-    })
+    return jsonify({'status': 'healthy', 'client': client.client_name, 'samples': client.num_samples})
 
 @app.route('/api/client_info', methods=['GET'])
 def client_info():
@@ -170,9 +136,8 @@ def client_info():
 def update_model():
     try:
         data = request.json
-        global_params = data.get('global_parameters')
-        if global_params:
-            client.set_parameters(global_params)
+        if data.get('global_parameters'):
+            client.set_parameters(data['global_parameters'])
         
         local_params, history = client.train_local(epochs=LOCAL_EPOCHS)
         eval_metrics = client.evaluate()
