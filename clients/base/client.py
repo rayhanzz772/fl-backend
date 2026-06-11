@@ -163,7 +163,7 @@ def evaluate():
         'accuracy': metrics['accuracy'],
         'f1_score': metrics['f1'],
         'recall': metrics['recall'],
-        'num_samples': metrics['samples']
+        'num_samples': metrics.get('samples', client.num_samples)
     })
 
 if __name__ == '__main__':
