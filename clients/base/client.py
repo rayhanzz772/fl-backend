@@ -118,7 +118,7 @@ class FederatedLearningClient:
 
 # Initialize client
 CLIENT_NAME = os.getenv('CLIENT_NAME', 'client')
-DATA_PATH = f'/app/data/stunting_{CLIENT_NAME}.csv'
+DATA_PATH = f'/app/data/{CLIENT_NAME}.csv'
 LOCAL_EPOCHS = getattr(config, 'LOCAL_EPOCHS', 3)
 
 client = FederatedLearningClient(CLIENT_NAME, DATA_PATH)
