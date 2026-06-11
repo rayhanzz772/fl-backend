@@ -45,28 +45,41 @@ class FederatedModel:
     def aggregate_fedavg(self, client_params, client_samples):
         """Federated Averaging aggregation"""
         total_samples = sum(client_samples)
+        if not client_params:
+            raise ValueError("No client parameters provided for aggregation")
         
-        # Get current shape
-        current_shape = self.model.coef_.shape
+        # Infer the expected shape from the first client update instead of the
+        # server's initial placeholder model shape.
+        target_coef = np.asarray(client_params[0]['coef_'], dtype=float)
+        if target_coef.ndim == 1:
+            target_coef = target_coef.reshape(1, -1)
+        current_shape = target_coef.shape
         
         # Weighted average for coefficients
         aggregated_coef = np.zeros(current_shape)
-        aggregated_intercept = 0.0
+        aggregated_intercept = np.zeros_like(np.asarray(client_params[0]['intercept_'], dtype=float))
         
-        for params, num_samples in zip(client_params, client_samples):
+        for index, (params, num_samples) in enumerate(zip(client_params, client_samples)):
             weight = num_samples / total_samples
-            client_coef = np.array(params['coef_'])
+            client_coef = np.asarray(params['coef_'], dtype=float)
             
             # Ensure shape compatibility
             if client_coef.shape != current_shape:
-                client_coef = client_coef.reshape(current_shape)
+                try:
+                    client_coef = client_coef.reshape(current_shape)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Client {index} coefficient shape {client_coef.shape} is incompatible with expected shape {current_shape}"
+                    ) from exc
             
             aggregated_coef += client_coef * weight
-            aggregated_intercept += np.array(params['intercept_']) * weight
+            aggregated_intercept += np.asarray(params['intercept_'], dtype=float) * weight
         
         # Update model
         self.model.coef_ = aggregated_coef
         self.model.intercept_ = aggregated_intercept
+        self.model.n_features_in_ = current_shape[1]
+        self.n_features = current_shape[1]
         
         logger.info(f"Aggregated {len(client_params)} clients with {total_samples} total samples")
         
